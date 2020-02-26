@@ -3,11 +3,15 @@ library(gapminder)
 library(dplyr)
 library(ggplot2)
 library(stringr)
+library(shinyjs)
 
 
 gapminder = gapminder %>% mutate_at(c('year','country'), as.factor)
 
-headerRow = div(
+es.DB = read.csv('es.csv')
+
+headerRow = div(useShinyjs(),
+                id='Header',
                 selectInput(
                     'selYear',
                     label = 'Select the year',
@@ -41,16 +45,24 @@ plotPanel = tabPanel('Plot',
                             )
                      )
 
-plotlyPanel = tabPanel("plotlyData",
+plotlyPanel = tabPanel("Plot",
                        plotly::plotlyOutput('plotlyData') #if we load plotly as library, it substitutes ggplot
                        )
 
-ui = navbarPage("Shiny app", dataPanel, plotPanel,plotlyPanel, header =  headerRow)
+mapPanel = tabPanel('Map',
+                    tableOutput('mapTable')
+                    )
+
+ui = navbarPage("Shiny app", dataPanel, plotPanel,plotlyPanel, mapPanel, header =  headerRow, id = 'navBar')
 
 server = function(input,output) {
     
     #This is a function, (because of reactive)
     gapminder_filtered = reactive({ gapminder %>% filter(year %in% input$selYear, country %in% input$selCountry)})
+    
+    
+    observe( if(input$navBar == "Map"){shinyjs::hide('Header')}else{ shinyjs::show('Header')})
+    
     
     output$dataTable = renderTable({
         req(input$selYear)
@@ -103,7 +115,11 @@ server = function(input,output) {
             ggplot(mapping =  aes(x = country, y = pop, fill = year)) + 
             geom_bar(stat = 'identity', position = position_dodge()) + 
             theme_classic()
-    })  
+    }) 
+    
+    output$mapTable = renderTable({
+        head(es.DB)
+    })
     
     
 }
