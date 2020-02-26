@@ -45,7 +45,7 @@ server = function(input,output) {
     
     output$plotData = renderPlot({
         req(input$selCountry)
-        req(input$year)
+        req(input$selYear)
         gapminder_filtered() %>%
         ggplot(mapping =  aes(x = country, y = pop, fill = year)) + 
             geom_bar(stat = 'identity', position = position_dodge()) + 
