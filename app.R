@@ -1,49 +1,61 @@
-#
-# This is a Shiny web application. You can run the application by clicking
-# the 'Run App' button above.
-#
-# Find out more about building applications with Shiny here:
-#
-#    http://shiny.rstudio.com/
-#
-
 library(shiny)
+library(gapminder)
+library(dplyr)
+library(ggplot2)
 
-# Define UI for application that draws a histogram
-ui <- fluidPage(
 
-    # Application title
-    titlePanel("Old Faithful Geyser Data"),
+gapminder = gapminder %>% mutate_at(c('year','country'), as.factor)
 
-    # Sidebar with a slider input for number of bins 
-    sidebarLayout(
-        sidebarPanel(
-            sliderInput("bins",
-                        "Number of bins:",
-                        min = 1,
-                        max = 50,
-                        value = 30)
-        ),
+headerRow = div(
+                selectInput(
+                    'selYear',
+                    label = 'Select the year',
+                    multiple = TRUE,
+                    choices = gapminder$year
+                ),
+                selectInput(
+                    'selCountry',
+                    label= 'Select the country',
+                    multiple = TRUE,
+                    choices = gapminder$country
+                )
+            )
 
-        # Show a plot of the generated distribution
-        mainPanel(
-           plotOutput("distPlot")
-        )
-    )
-)
+dataPanel = tabPanel('Data',
+                     #selectInput('selYear',label = 'Select year',multiple = TRUE,choices = gapminder$year),
+                     tableOutput('dataTable'))
 
-# Define server logic required to draw a histogram
-server <- function(input, output) {
+plotPanel = tabPanel('Plot', 
+                     #selectInput('selCountry', label = 'Select country', multiple = TRUE, choices = gapminder$country),
+                     plotOutput('plotData')
+                     )
 
-    output$distPlot <- renderPlot({
-        # generate bins based on input$bins from ui.R
-        x    <- faithful[, 2]
-        bins <- seq(min(x), max(x), length.out = input$bins + 1)
+ui = navbarPage("Shiny app", dataPanel, plotPanel,header =  headerRow)
 
-        # draw the histogram with the specified number of bins
-        hist(x, breaks = bins, col = 'darkgray', border = 'white')
+server = function(input,output) {
+    
+    #This is a function, (because of reactive)
+    gapminder_filtered = reactive({ gapminder %>% filter(year %in% input$selYear, country %in% input$selCountry)})
+    
+    output$dataTable = renderTable({
+        req(input$selYear)
+        gapminder_filtered()
     })
+    
+    
+    output$plotData = renderPlot({
+        req(input$selCountry)
+        req(input$year)
+        gapminder_filtered() %>%
+        ggplot(mapping =  aes(x = country, y = pop, fill = year)) + 
+            geom_bar(stat = 'identity', position = position_dodge()) + 
+            theme_classic()
+    })    
+    
+    
+    
 }
+
 
 # Run the application 
 shinyApp(ui = ui, server = server)
