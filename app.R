@@ -1,125 +1,136 @@
 library(shiny)
-library(gapminder)
 library(dplyr)
 library(ggplot2)
 library(stringr)
 library(shinyjs)
 
+data(esoph)
 
-gapminder = gapminder %>% mutate_at(c('year','country'), as.factor)
+esoph$alcgp = lapply(strsplit(as.character(esoph$alcgp), "/"), `[[`, 1)
+esoph$alcgp = lapply(strsplit(as.character(esoph$alcgp), "g"), `[[`, 1)
 
-es.DB = read.csv('es.csv')
 
+esoph$alcgp[esoph$alcgp == '120+'] <- '120-999'
+
+esoph$alcgp = unlist(esoph$alcgp)
+
+esoph$tobgp = lapply(strsplit(as.character(esoph$tobgp), "/"), `[[`, 1)
+esoph$tobgp = lapply(strsplit(as.character(esoph$tobgp), "g"), `[[`, 1)
+
+
+esoph$tobgp[esoph$tobgp == '30+'] <- '30-999'
+
+esoph$tobgp = unlist(esoph$tobgp)
+
+
+View(esoph)
 headerRow = div(useShinyjs(),
                 id='Header',
                 selectInput(
-                    'selYear',
-                    label = 'Select the year',
+                    'selGroup',
+                    label = 'Select the age group',
                     multiple = TRUE,
-                    choices = gapminder$year,
-                    selected = gapminder$year[1:3]
+                    choices = esoph$agegp,
+                    selected = unique(esoph$agegp)
                 ),
                 selectInput(
-                    'selCountry',
-                    label= 'Select the country',
+                    'selAlc',
+                    label = 'Select the alcohol consumption group',
                     multiple = TRUE,
-                    choices = gapminder$country,
-                    selected = unique(gapminder$country)[1:2]
+                    choices = esoph$alcgp,
+                    selected = unique(esoph$alcgp)[1]
+                ),
+                selectInput(
+                    'selTob',
+                    label = 'Select the tobacco consumption group',
+                    multiple = TRUE,
+                    choices = esoph$tobgp,
+                    selected = unique(esoph$tobgp)[1]
                 )
+                
             )
 
-dataPanel = tabPanel('Data',
-                     #selectInput('selYear',label = 'Select year',multiple = TRUE,choices = gapminder$year),
-                     tableOutput('dataTable'))
+headerRow_min = div(useShinyjs(),
+                id='HeaderMin',
+                selectInput(
+                    'selGroup',
+                    label = 'Select the age group',
+                    multiple = TRUE,
+                    choices = esoph$agegp,
+                    selected = unique(esoph$agegp)
+                )
+                
+)
 
-
-
-plotPanel = tabPanel('Plot', 
-                     #selectInput('selCountry', label = 'Select country', multiple = TRUE, choices = gapminder$country),
-                     fluidRow(column(width = 8, plotOutput('plotData', hover =  hoverOpts(id = "plot_hover", delayType = "throttle"))),
-                              column(width = 4, h2('Information'),
-                                     div("Country: ", textOutput('txtCountry', inline = TRUE)),
-                                     div("Year: ", textOutput('txtYear', inline = TRUE)),
-                                     div('Population: ', textOutput('txtPop', inline = TRUE)))
-                                     #verbatimTextOutput("plot_hoverinfo"))
-                            )
-                     )
-
-plotlyPanel = tabPanel("Plot",
-                       plotly::plotlyOutput('plotlyData') #if we load plotly as library, it substitutes ggplot
-                       )
-
-mapPanel = tabPanel('Map',
+mapPanel = tabPanel('Data',
+                    downloadButton('downloadData', 'Download'),
                     tableOutput('mapTable')
                     )
 
-ui = navbarPage("Shiny app", dataPanel, plotPanel,plotlyPanel, mapPanel, header =  headerRow, id = 'navBar')
+Graphs = navbarMenu("Visualizations",
+                    tabPanel('Cancer Incidences per age group',
+                             headerRow_min,
+                             h2('Cancer incidences per age group'),
+                             plotly::plotlyOutput('IncidenceRate')),
+                    tabPanel('Cancer incidences per substance consumption',
+                             h2('Cancer incidences per substance consumption'),
+                             plotly::plotlyOutput('AlcoholAgeGP'),
+                             plotly::plotlyOutput('TobaccoAgeGP')))
+
+ui = navbarPage("Esophageal cancer statistics", Graphs, mapPanel, header = headerRow, id = 'navBar')
 
 server = function(input,output) {
     
     #This is a function, (because of reactive)
-    gapminder_filtered = reactive({ gapminder %>% filter(year %in% input$selYear, country %in% input$selCountry)})
+    esoph_filtered_incidence = reactive({esoph %>% filter(agegp %in% input$selGroup)})
+    esoph_filtered = reactive({esoph %>% filter(agegp %in% input$selGroup & tobgp %in% input$selTob & alcgp %in% input$selAlc)})
     
     
-    observe( if(input$navBar == "Map"){shinyjs::hide('Header')}else{ shinyjs::show('Header')})
+    observe( if(input$navBar == "Data" || input$navBar == 'Cancer Incidences per age group'){shinyjs::hide('Header')}else{ shinyjs::show('Header')})
     
     
-    output$dataTable = renderTable({
-        req(input$selYear)
-        gapminder_filtered()
-    })
-    
-    output$plotData = renderPlot({
-        req(input$selCountry)
-        req(input$selYear)
-        gapminder_filtered() %>%
-        ggplot(mapping =  aes(x = country, y = pop, fill = year)) + 
+    output$IncidenceRate = plotly::renderPlotly({
+        req(input$selGroup)
+        esoph_filtered_incidence() %>%
+            ggplot(mapping =  aes(x = agegp, y = ncases)) + 
             geom_bar(stat = 'identity', position = position_dodge()) + 
+            labs(title = 'Esophageal cancer patients by age group', x = 'Age group', y = 'Number of cases') +
             theme_classic()
-    })  
-    
-    output$plot_hoverinfo <- renderPrint({
-        cat("Mouseover information :\n")
-        str(input$plot_hover)
-    })
-    
-    countryIndex = reactive({
-        req(input$plot_hover$x)
-        round(input$plot_hover$x)
-    })
-    
-    yearIndex = reactive({
-        req(input$plot_hover$x)
-        ceiling((input$plot_hover$x - round(input$plot_hover$x) + 0.5) * length(input$selYear))
-    })
+    }) 
     
     
-    countryName = reactive({
-        req(countryIndex() > 0 & countryIndex() <= length(input$selCountry))
-        input$selCountry[countryIndex()]
-    })
-    
-    yearName = reactive({
-        req(yearIndex() > 0 & yearIndex() <= length(input$selYear))
-        str_sort(input$selYear)[yearIndex()]
-    })
-    
-    output$txtCountry = renderText(countryName())
-    output$txtYear = renderText(yearName())
-    output$txtPop = renderText(gapminder_filtered() %>% filter(year == yearName() & country == countryName()) %>% pull(pop))
-    
-    output$plotlyData = plotly::renderPlotly({
-        req(input$selCountry)
-        req(input$selYear)
-        gapminder_filtered() %>%
-            ggplot(mapping =  aes(x = country, y = pop, fill = year)) + 
+    output$AlcoholAgeGP = plotly::renderPlotly({
+        req(input$selGroup)
+        req(input$selAlc)
+        esoph_filtered() %>%
+            ggplot(mapping =  aes(x = alcgp, y = ncases, fill = agegp)) + 
             geom_bar(stat = 'identity', position = position_dodge()) + 
+            labs(title = 'Esophageal cancer patients by alcohol consumption', x = 'Alcohol consumption', y = 'Number of cases') +
+            theme_classic()
+    }) 
+    
+    output$TobaccoAgeGP = plotly::renderPlotly({
+        req(input$selGroup)
+        req(input$selTob)
+        esoph_filtered() %>%
+            ggplot(mapping =  aes(x = tobgp, y = ncases, fill = agegp)) + 
+            geom_bar(stat = 'identity', position = position_dodge()) + 
+            labs(title = 'Esophageal cancer patients by tobacco consumption', x = 'Tobacco consumption', y = 'Number of cases') +
             theme_classic()
     }) 
     
     output$mapTable = renderTable({
-        head(es.DB)
+        esoph
     })
+    
+    output$downloadData = downloadHandler(
+                            filename = function() {
+                                paste('Esoph-data', '.csv', sep='')
+                            },
+                            content = function(con) {
+                                write.csv(esoph, con)
+                            }
+                         )
     
     
 }
